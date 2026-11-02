@@ -5,13 +5,23 @@ from fastapi import APIRouter, HTTPException, status
 
 from .. import db
 from ..models import Category, Issue, IssueIn, IssueUpdate, Status
+from ..services.duplicates import find_duplicate
+from ..services.priority import score
 
 router = APIRouter(prefix="/issues", tags=["issues"])
 
 
 @router.post("", response_model=Issue, status_code=status.HTTP_201_CREATED)
 def report_issue(data: IssueIn) -> Issue:
-    return db.create(data)
+    # A second report of the same problem at the same place raises the existing issue instead of a new one.
+    existing = find_duplicate(data, db.all_issues())
+    if existing:
+        existing.reports += 1
+        existing.priority = score(existing)
+        return db.save(existing)
+    issue = db.create(data)
+    issue.priority = score(issue)
+    return db.save(issue)
 
 
 @router.get("", response_model=List[Issue])
